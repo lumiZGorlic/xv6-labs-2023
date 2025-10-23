@@ -23,6 +23,10 @@ struct {
   struct run *freelist;
 } kmem;
 
+int useReference[PHYSTOP/PGSIZE];
+struct spinlock ref_count_lock;
+
+
 void
 kinit()
 {
@@ -47,6 +51,15 @@ void
 kfree(void *pa)
 {
   struct run *r;
+  int temp;
+
+  acquire(&ref_count_lock);
+  useReference[(uint64)pa/PGSIZE] -= 1;
+  temp = useReference[(uint64)pa/PGSIZE];
+  release(&ref_count_lock);
+
+  if(temp > 0) return;
+
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
@@ -59,6 +72,11 @@ kfree(void *pa)
   acquire(&kmem.lock);
   r->next = kmem.freelist;
   kmem.freelist = r;
+
+  acquire(&ref_count_lock);
+  useReference[(uint64)pa/PGSIZE] = 1;
+  release(&ref_count_lock);
+
   release(&kmem.lock);
 }
 
